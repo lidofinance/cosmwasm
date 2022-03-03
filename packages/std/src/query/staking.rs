@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{Addr, Coin, Decimal};
+use crate::{Addr, Coin, Decimal, Uint128};
 
 #[non_exhaustive]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -12,7 +12,9 @@ pub enum StakingQuery {
     /// Returns the denomination that can be bonded (if there are multiple native tokens on the chain)
     BondedDenom {},
     /// AllDelegations will return all delegations by the delegator
-    AllDelegations { delegator: String },
+    AllDelegations {
+        delegator: String,
+    },
     /// Delegation will return more detailed info on a particular
     /// delegation, defined by delegator/validator pair
     Delegation {
@@ -31,6 +33,64 @@ pub enum StakingQuery {
         /// The validator's address (e.g. (e.g. cosmosvaloper1...))
         address: String,
     },
+
+    // --------------------
+    TokenizeShareRecordById {
+        id: u64,
+    },
+    TokenizeShareRecordByDenom {
+        denom: String,
+    },
+    TokenizeShareRecordsOwned {},
+    AllTokenizeShareRecords {},
+    LastTokenizeShareRecordId {},
+    TotalTokenizeSharedAssets {},
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TokenizeShareRecord {
+    pub id: u64,
+    pub owner: String,
+    pub share_token_denom: String,
+    pub module_account: String,
+    pub validator: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TokenizeShareRecordByIdResponse {
+    pub record: TokenizeShareRecord,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TokenizeShareRecordByDenomResponse {
+    pub record: TokenizeShareRecord,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TokenizeShareRecordsOwnedResponse {
+    pub records: Vec<TokenizeShareRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct AllTokenizeShareRecordsResponse {
+    pub records: Vec<TokenizeShareRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct LastTokenizeShareRecordIdResponse {
+    pub id: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TotalTokenizeSharedAssetsResponse {
+    pub value: Coin,
 }
 
 /// BondedDenomResponse is data format returned from StakingRequest::BondedDenom query
