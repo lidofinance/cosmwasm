@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{Addr, Coin, Decimal, Uint128};
+use crate::{Addr, Coin, Decimal};
 
 #[non_exhaustive]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -41,13 +41,15 @@ pub enum StakingQuery {
     TokenizeShareRecordByDenom {
         denom: String,
     },
-    TokenizeShareRecordsOwned {},
+    TokenizeShareRecordsOwned {
+        address: Addr,
+    },
     AllTokenizeShareRecords {},
     LastTokenizeShareRecordId {},
     TotalTokenizeSharedAssets {},
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TokenizeShareRecord {
     pub id: u64,
@@ -60,13 +62,13 @@ pub struct TokenizeShareRecord {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TokenizeShareRecordByIdResponse {
-    pub record: TokenizeShareRecord,
+    pub record: Option<TokenizeShareRecord>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct TokenizeShareRecordByDenomResponse {
-    pub record: TokenizeShareRecord,
+    pub record: Option<TokenizeShareRecord>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

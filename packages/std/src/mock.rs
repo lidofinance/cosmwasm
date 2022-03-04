@@ -3,6 +3,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::ops::Add;
 
 use crate::addresses::{Addr, CanonicalAddr};
 use crate::binary::Binary;
@@ -16,7 +17,8 @@ use crate::ibc::{
     IbcTimeoutBlock,
 };
 use crate::query::{
-    AllBalanceResponse, BalanceResponse, BankQuery, CustomQuery, QueryRequest, WasmQuery,
+    AllBalanceResponse, BalanceResponse, BankQuery, CustomQuery, QueryRequest, TokenizeShareRecord,
+    WasmQuery,
 };
 #[cfg(feature = "staking")]
 use crate::query::{
@@ -29,7 +31,7 @@ use crate::storage::MemoryStorage;
 use crate::timestamp::Timestamp;
 use crate::traits::{Api, Querier, QuerierResult};
 use crate::types::{BlockInfo, ContractInfo, Env, MessageInfo, TransactionInfo};
-use crate::Attribute;
+use crate::{Attribute, Uint128};
 
 pub const MOCK_CONTRACT_ADDR: &str = "cosmos2contract";
 
@@ -438,8 +440,9 @@ impl<C: DeserializeOwned> MockQuerier<C> {
         denom: &str,
         validators: &[crate::query::Validator],
         delegations: &[crate::query::FullDelegation],
+        tokenize_share_records: &[crate::query::TokenizeShareRecord],
     ) {
-        self.staking = StakingQuerier::new(denom, validators, delegations);
+        self.staking = StakingQuerier::new(denom, validators, delegations, tokenize_share_records);
     }
 
     pub fn with_custom_handler<CH: 'static>(mut self, handler: CH) -> Self
@@ -559,15 +562,22 @@ pub struct StakingQuerier {
     denom: String,
     validators: Vec<Validator>,
     delegations: Vec<FullDelegation>,
+    tokenize_share_records: Vec<TokenizeShareRecord>,
 }
 
 #[cfg(feature = "staking")]
 impl StakingQuerier {
-    pub fn new(denom: &str, validators: &[Validator], delegations: &[FullDelegation]) -> Self {
+    pub fn new(
+        denom: &str,
+        validators: &[Validator],
+        delegations: &[FullDelegation],
+        tokenize_shares: &[TokenizeShareRecord],
+    ) -> Self {
         StakingQuerier {
             denom: denom.to_string(),
             validators: validators.to_vec(),
             delegations: delegations.to_vec(),
+            tokenize_share_records: tokenize_shares.to_vec(),
         }
     }
 
@@ -617,6 +627,58 @@ impl StakingQuerier {
                     delegation: delegation.cloned(),
                 };
                 to_binary(&res).into()
+            }
+            StakingQuery::TokenizeShareRecordById { id } => {
+                let record = self
+                    .tokenize_share_records
+                    .iter()
+                    .find(|r| r.id == id.clone());
+                to_binary(&record).into()
+            }
+            StakingQuery::TokenizeShareRecordByDenom { denom } => {
+                let record = self
+                    .tokenize_share_records
+                    .iter()
+                    .find(|r| r.share_token_denom == denom.clone());
+                to_binary(&record).into()
+            }
+            StakingQuery::TokenizeShareRecordsOwned { address } => {
+                let records = self
+                    .tokenize_share_records
+                    .iter()
+                    .filter(|r| r.owner == address.to_string())
+                    .map(|r| r.clone());
+                to_binary(&records.collect::<Vec<TokenizeShareRecord>>()).into()
+            }
+            StakingQuery::AllTokenizeShareRecords {} => {
+                to_binary(&self.tokenize_share_records).into()
+            }
+            StakingQuery::LastTokenizeShareRecordId {} => to_binary(
+                &self
+                    .tokenize_share_records
+                    .last()
+                    .unwrap_or(&TokenizeShareRecord::default())
+                    .id,
+            )
+            .into(),
+            StakingQuery::TotalTokenizeSharedAssets {} => {
+                let mut total_tokenize_shared = Uint128::zero();
+                for record in &self.tokenize_share_records {
+                    let module_acc = record.module_account.clone();
+                    let val_addr = record.validator.clone();
+
+                    let delegation = self
+                        .delegations
+                        .iter()
+                        .find(|d| d.delegator == module_acc && d.validator == val_addr);
+                    if delegation.is_none() {
+                        return SystemResult::Err(SystemError::Unknown {});
+                    }
+
+                    total_tokenize_shared =
+                        total_tokenize_shared.add(delegation.unwrap().amount.clone().amount);
+                }
+                to_binary(&Coin::new(total_tokenize_shared.u128(), self.denom.clone())).into()
             }
         };
         // system result is always ok in the mock implementation
@@ -1070,7 +1132,7 @@ mod tests {
             max_change_rate: Decimal::permille(5),
         };
 
-        let staking = StakingQuerier::new("ustake", &[val1.clone(), val2.clone()], &[]);
+        let staking = StakingQuerier::new("ustake", &[val1.clone(), val2.clone()], &[], &[]);
 
         // one match
         let raw = staking
@@ -1101,7 +1163,7 @@ mod tests {
             max_change_rate: Decimal::permille(5),
         };
 
-        let staking = StakingQuerier::new("ustake", &[val1.clone(), val2.clone()], &[]);
+        let staking = StakingQuerier::new("ustake", &[val1.clone(), val2.clone()], &[], &[]);
 
         // query 1
         let raw = staking
@@ -1212,6 +1274,7 @@ mod tests {
             "ustake",
             &[],
             &[del1a.clone(), del1b.clone(), del2a.clone(), del2c.clone()],
+            &[],
         );
 
         // get all for user a
@@ -1295,5 +1358,406 @@ mod tests {
         assert_eq!(digit_sum(&[1, 2, 3]), 6);
 
         assert_eq!(digit_sum(&[255, 1]), 256);
+    }
+
+    #[cfg(feature = "staking")]
+    #[test]
+    fn staking_querier_tokenize_share_by_id() {
+        let module = Addr::unchecked("liquid_staking_module");
+        let validator_address = String::from("validator-one");
+
+        let user_address = Addr::unchecked("user_address");
+
+        let del = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address.clone(),
+            amount: coin(100, "ustake"),
+            can_redelegate: coin(100, "ustake"),
+            accumulated_rewards: coins(5, "ustake"),
+        };
+
+        let val = Validator {
+            address: validator_address.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+
+        let record = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.into_string(),
+            share_token_denom: "share_denom".to_string(),
+            module_account: module.into_string(),
+            validator: validator_address.clone(),
+        };
+
+        let staking = StakingQuerier::new("ustake", &[val], &[del.clone()], &[record.clone()]);
+
+        let res: Option<TokenizeShareRecord> = from_binary(
+            &staking
+                .query(&StakingQuery::TokenizeShareRecordById { id: 2 })
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res, None);
+
+        let res: Option<TokenizeShareRecord> = from_binary(
+            &staking
+                .query(&StakingQuery::TokenizeShareRecordById { id: 1 })
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res.unwrap(), record)
+    }
+
+    #[cfg(feature = "staking")]
+    #[test]
+    fn staking_querier_tokenize_share_by_denom() {
+        let module = Addr::unchecked("liquid_staking_module");
+        let validator_address = String::from("validator-one");
+
+        let user_address = Addr::unchecked("user_address");
+
+        let del = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address.clone(),
+            amount: coin(100, "ustake"),
+            can_redelegate: coin(100, "ustake"),
+            accumulated_rewards: coins(5, "ustake"),
+        };
+
+        let val = Validator {
+            address: validator_address.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+
+        let record = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.into_string(),
+            share_token_denom: "share_denom".to_string(),
+            module_account: module.into_string(),
+            validator: validator_address.clone(),
+        };
+
+        let staking = StakingQuerier::new("ustake", &[val], &[del.clone()], &[record.clone()]);
+
+        let res: Option<TokenizeShareRecord> = from_binary(
+            &staking
+                .query(&StakingQuery::TokenizeShareRecordByDenom {
+                    denom: "invalid_denom".to_string(),
+                })
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res, None);
+
+        let res: Option<TokenizeShareRecord> = from_binary(
+            &staking
+                .query(&StakingQuery::TokenizeShareRecordByDenom {
+                    denom: "share_denom".to_string(),
+                })
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res.unwrap(), record)
+    }
+
+    #[cfg(feature = "staking")]
+    #[test]
+    fn staking_querier_tokenize_shares_owned() {
+        let module = Addr::unchecked("liquid_staking_module");
+        let validator_address = String::from("validator-one");
+        let validator_address1 = String::from("validator-two");
+
+        let user_address = Addr::unchecked("user_address");
+
+        let del = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address.clone(),
+            amount: coin(100, "ustake"),
+            can_redelegate: coin(100, "ustake"),
+            accumulated_rewards: coins(5, "ustake"),
+        };
+
+        let del1 = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address1.clone(),
+            amount: coin(200, "ustake"),
+            can_redelegate: coin(200, "ustake"),
+            accumulated_rewards: coins(50, "ustake"),
+        };
+
+        let val = Validator {
+            address: validator_address.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+        let val1 = Validator {
+            address: validator_address1.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+
+        let record = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.clone().into_string(),
+            share_token_denom: "share_denom".to_string(),
+            module_account: module.clone().into_string(),
+            validator: validator_address.clone(),
+        };
+        let record1 = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.clone().into_string(),
+            share_token_denom: "share_denom1".to_string(),
+            module_account: module.into_string(),
+            validator: validator_address1.clone(),
+        };
+
+        let staking = StakingQuerier::new(
+            "ustake",
+            &[val, val1],
+            &[del.clone(), del1.clone()],
+            &[record.clone(), record1.clone()],
+        );
+
+        let res: Vec<TokenizeShareRecord> = from_binary(
+            &staking
+                .query(&StakingQuery::TokenizeShareRecordsOwned {
+                    address: Addr::unchecked("not_owner_address"),
+                })
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res, vec![]);
+
+        let res: Vec<TokenizeShareRecord> = from_binary(
+            &staking
+                .query(&StakingQuery::TokenizeShareRecordsOwned {
+                    address: user_address,
+                })
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res, vec![record, record1])
+    }
+
+    #[cfg(feature = "staking")]
+    #[test]
+    fn staking_querier_all_tokenize_share_records() {
+        let module = Addr::unchecked("liquid_staking_module");
+        let validator_address = String::from("validator-one");
+        let validator_address1 = String::from("validator-two");
+
+        let user_address = Addr::unchecked("user_address");
+
+        let del = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address.clone(),
+            amount: coin(100, "ustake"),
+            can_redelegate: coin(100, "ustake"),
+            accumulated_rewards: coins(5, "ustake"),
+        };
+
+        let del1 = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address1.clone(),
+            amount: coin(200, "ustake"),
+            can_redelegate: coin(200, "ustake"),
+            accumulated_rewards: coins(50, "ustake"),
+        };
+
+        let val = Validator {
+            address: validator_address.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+        let val1 = Validator {
+            address: validator_address1.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+
+        let record = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.clone().into_string(),
+            share_token_denom: "share_denom".to_string(),
+            module_account: module.clone().into_string(),
+            validator: validator_address.clone(),
+        };
+        let record1 = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.clone().into_string(),
+            share_token_denom: "share_denom1".to_string(),
+            module_account: module.into_string(),
+            validator: validator_address1.clone(),
+        };
+
+        let staking = StakingQuerier::new(
+            "ustake",
+            &[val, val1],
+            &[del.clone(), del1.clone()],
+            &[record.clone(), record1.clone()],
+        );
+
+        let res: Vec<TokenizeShareRecord> = from_binary(
+            &staking
+                .query(&StakingQuery::AllTokenizeShareRecords {})
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res, vec![record, record1])
+    }
+
+    #[cfg(feature = "staking")]
+    #[test]
+    fn staking_querier_last_tokenize_share_record_id() {
+        let module = Addr::unchecked("liquid_staking_module");
+        let validator_address = String::from("validator-one");
+        let validator_address1 = String::from("validator-two");
+
+        let user_address = Addr::unchecked("user_address");
+
+        let del = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address.clone(),
+            amount: coin(100, "ustake"),
+            can_redelegate: coin(100, "ustake"),
+            accumulated_rewards: coins(5, "ustake"),
+        };
+
+        let del1 = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address1.clone(),
+            amount: coin(200, "ustake"),
+            can_redelegate: coin(200, "ustake"),
+            accumulated_rewards: coins(50, "ustake"),
+        };
+
+        let val = Validator {
+            address: validator_address.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+        let val1 = Validator {
+            address: validator_address1.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+
+        let record = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.clone().into_string(),
+            share_token_denom: "share_denom".to_string(),
+            module_account: module.clone().into_string(),
+            validator: validator_address.clone(),
+        };
+        let record1 = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.clone().into_string(),
+            share_token_denom: "share_denom1".to_string(),
+            module_account: module.into_string(),
+            validator: validator_address1.clone(),
+        };
+
+        let staking = StakingQuerier::new(
+            "ustake",
+            &[val, val1],
+            &[del.clone(), del1.clone()],
+            &[record.clone(), record1.clone()],
+        );
+
+        let res: u64 = from_binary(
+            &staking
+                .query(&StakingQuery::LastTokenizeShareRecordId {})
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res, record1.id)
+    }
+
+    #[cfg(feature = "staking")]
+    #[test]
+    fn staking_querier_total_tokenize_shared_assets() {
+        let module = Addr::unchecked("liquid_staking_module");
+        let validator_address = String::from("validator-one");
+        let validator_address1 = String::from("validator-two");
+
+        let user_address = Addr::unchecked("user_address");
+
+        let del = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address.clone(),
+            amount: coin(100, "ustake"),
+            can_redelegate: coin(100, "ustake"),
+            accumulated_rewards: coins(5, "ustake"),
+        };
+
+        let del1 = FullDelegation {
+            delegator: module.clone(),
+            validator: validator_address1.clone(),
+            amount: coin(200, "ustake"),
+            can_redelegate: coin(200, "ustake"),
+            accumulated_rewards: coins(50, "ustake"),
+        };
+
+        let val = Validator {
+            address: validator_address.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+        let val1 = Validator {
+            address: validator_address1.clone(),
+            commission: Decimal::percent(1),
+            max_commission: Decimal::percent(3),
+            max_change_rate: Decimal::percent(1),
+        };
+
+        let record = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.clone().into_string(),
+            share_token_denom: "share_denom".to_string(),
+            module_account: module.clone().into_string(),
+            validator: validator_address.clone(),
+        };
+        let record1 = TokenizeShareRecord {
+            id: 1,
+            owner: user_address.clone().into_string(),
+            share_token_denom: "share_denom1".to_string(),
+            module_account: module.into_string(),
+            validator: validator_address1.clone(),
+        };
+
+        let staking = StakingQuerier::new(
+            "ustake",
+            &[val, val1],
+            &[del.clone(), del1.clone()],
+            &[record.clone(), record1.clone()],
+        );
+
+        let res: Coin = from_binary(
+            &staking
+                .query(&StakingQuery::TotalTokenizeSharedAssets {})
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(res, Coin::new(300u128, "ustake"))
     }
 }

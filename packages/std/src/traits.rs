@@ -325,7 +325,7 @@ impl<'a, C: CustomQuery> QuerierWrapper<'a, C> {
     pub fn query_tokenize_share_record_by_id(
         &self,
         id: impl Into<u64>,
-    ) -> StdResult<TokenizeShareRecord> {
+    ) -> StdResult<Option<TokenizeShareRecord>> {
         let request = StakingQuery::TokenizeShareRecordById { id: id.into() }.into();
         let res: TokenizeShareRecordByIdResponse = self.query(&request)?;
         Ok(res.record)
@@ -335,7 +335,7 @@ impl<'a, C: CustomQuery> QuerierWrapper<'a, C> {
     pub fn query_tokenize_share_record_by_denom(
         &self,
         denom: impl Into<String>,
-    ) -> StdResult<TokenizeShareRecord> {
+    ) -> StdResult<Option<TokenizeShareRecord>> {
         let request = StakingQuery::TokenizeShareRecordByDenom {
             denom: denom.into(),
         }
@@ -345,8 +345,11 @@ impl<'a, C: CustomQuery> QuerierWrapper<'a, C> {
     }
 
     #[cfg(feature = "staking")]
-    pub fn query_tokenize_share_records_owned(&self) -> StdResult<Vec<TokenizeShareRecord>> {
-        let request = StakingQuery::TokenizeShareRecordsOwned {}.into();
+    pub fn query_tokenize_share_records_owned(
+        &self,
+        address: Addr,
+    ) -> StdResult<Vec<TokenizeShareRecord>> {
+        let request = StakingQuery::TokenizeShareRecordsOwned { address }.into();
         let res: TokenizeShareRecordsOwnedResponse = self.query(&request)?;
         Ok(res.records)
     }
