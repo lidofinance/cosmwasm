@@ -12,9 +12,7 @@ pub enum StakingQuery {
     /// Returns the denomination that can be bonded (if there are multiple native tokens on the chain)
     BondedDenom {},
     /// AllDelegations will return all delegations by the delegator
-    AllDelegations {
-        delegator: String,
-    },
+    AllDelegations { delegator: String },
     /// Delegation will return more detailed info on a particular
     /// delegation, defined by delegator/validator pair
     Delegation {
@@ -34,18 +32,22 @@ pub enum StakingQuery {
         address: String,
     },
 
-    // --------------------
-    TokenizeShareRecordById {
-        id: u64,
-    },
-    TokenizeShareRecordByDenom {
-        denom: String,
-    },
-    TokenizeShareRecordsOwned {
-        address: Addr,
-    },
+    /// Returns individual tokenize share record information by share by id
+    TokenizeShareRecordById { id: u64 },
+
+    /// Returns individual tokenize share record information by share denom
+    TokenizeShareRecordByDenom { denom: String },
+
+    /// Returns tokenize share records by address
+    TokenizeShareRecordsOwned { address: Addr },
+
+    /// Returns all tokenize share records
     AllTokenizeShareRecords {},
+
+    /// Returns last tokenize share record id
     LastTokenizeShareRecordId {},
+
+    /// Returns total tokenized staked assets
     TotalTokenizeSharedAssets {},
 }
 
