@@ -47,7 +47,7 @@ pub enum StakingQuery {
     /// Returns last tokenize share record id
     LastTokenizeShareRecordId {},
 
-    /// Returns total tokenized staked assets
+    /// Returns sum of total staked assets (tokens) represented by tokenized shares
     TotalTokenizeSharedAssets {},
 }
 
