@@ -16,8 +16,12 @@ pub use bank::{AllBalanceResponse, BalanceResponse, BankQuery};
 pub use ibc::{ChannelResponse, IbcQuery, ListChannelsResponse, PortIdResponse};
 #[cfg(feature = "staking")]
 pub use staking::{
-    AllDelegationsResponse, AllValidatorsResponse, BondedDenomResponse, Delegation,
-    DelegationResponse, FullDelegation, StakingQuery, Validator, ValidatorResponse,
+    AllDelegationsResponse, AllTokenizeShareRecordsResponse, AllValidatorsResponse,
+    BondedDenomResponse, Delegation, DelegationResponse, FullDelegation,
+    LastTokenizeShareRecordIdResponse, StakingQuery, TokenizeShareRecord,
+    TokenizeShareRecordByDenomResponse, TokenizeShareRecordByIdResponse,
+    TokenizeShareRecordsOwnedResponse, TotalTokenizeSharedAssetsResponse, Validator,
+    ValidatorResponse,
 };
 #[cfg(feature = "stargate")]
 pub use stargate::StargateResponse;

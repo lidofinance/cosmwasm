@@ -31,6 +31,70 @@ pub enum StakingQuery {
         /// The validator's address (e.g. (e.g. cosmosvaloper1...))
         address: String,
     },
+
+    /// Returns individual tokenize share record information by share by id
+    TokenizeShareRecordById { id: u64 },
+
+    /// Returns individual tokenize share record information by share denom
+    TokenizeShareRecordByDenom { denom: String },
+
+    /// Returns tokenize share records by address
+    TokenizeShareRecordsOwned { address: Addr },
+
+    /// Returns all tokenize share records
+    AllTokenizeShareRecords {},
+
+    /// Returns last tokenize share record id
+    LastTokenizeShareRecordId {},
+
+    /// Returns sum of total staked assets (tokens) represented by tokenized shares
+    TotalTokenizeSharedAssets {},
+}
+
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TokenizeShareRecord {
+    pub id: u64,
+    pub owner: String,
+    pub share_token_denom: String,
+    pub module_account: String,
+    pub validator: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TokenizeShareRecordByIdResponse {
+    pub record: Option<TokenizeShareRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TokenizeShareRecordByDenomResponse {
+    pub record: Option<TokenizeShareRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TokenizeShareRecordsOwnedResponse {
+    pub records: Vec<TokenizeShareRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct AllTokenizeShareRecordsResponse {
+    pub records: Vec<TokenizeShareRecord>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct LastTokenizeShareRecordIdResponse {
+    pub id: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct TotalTokenizeSharedAssetsResponse {
+    pub value: Coin,
 }
 
 /// BondedDenomResponse is data format returned from StakingRequest::BondedDenom query

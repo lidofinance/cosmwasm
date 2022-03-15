@@ -9,12 +9,16 @@ use crate::errors::{RecoverPubkeyError, StdError, StdResult, VerificationError};
 #[cfg(feature = "iterator")]
 use crate::iterator::{Order, Record};
 use crate::query::{
-    AllBalanceResponse, BalanceResponse, BankQuery, CustomQuery, QueryRequest, WasmQuery,
+    AllBalanceResponse, AllTokenizeShareRecordsResponse, BalanceResponse, BankQuery, CustomQuery,
+    LastTokenizeShareRecordIdResponse, QueryRequest, TokenizeShareRecord,
+    TokenizeShareRecordByDenomResponse, TokenizeShareRecordsOwnedResponse,
+    TotalTokenizeSharedAssetsResponse, WasmQuery,
 };
 #[cfg(feature = "staking")]
 use crate::query::{
     AllDelegationsResponse, AllValidatorsResponse, BondedDenomResponse, Delegation,
-    DelegationResponse, FullDelegation, StakingQuery, Validator, ValidatorResponse,
+    DelegationResponse, FullDelegation, StakingQuery, TokenizeShareRecordByIdResponse, Validator,
+    ValidatorResponse,
 };
 use crate::results::{ContractResult, Empty, SystemResult};
 use crate::serde::{from_binary, to_binary, to_vec};
@@ -315,6 +319,60 @@ impl<'a, C: CustomQuery> QuerierWrapper<'a, C> {
         .into();
         let res: DelegationResponse = self.query(&request)?;
         Ok(res.delegation)
+    }
+
+    #[cfg(feature = "staking")]
+    pub fn query_tokenize_share_record_by_id(
+        &self,
+        id: impl Into<u64>,
+    ) -> StdResult<Option<TokenizeShareRecord>> {
+        let request = StakingQuery::TokenizeShareRecordById { id: id.into() }.into();
+        let res: TokenizeShareRecordByIdResponse = self.query(&request)?;
+        Ok(res.record)
+    }
+
+    #[cfg(feature = "staking")]
+    pub fn query_tokenize_share_record_by_denom(
+        &self,
+        denom: impl Into<String>,
+    ) -> StdResult<Option<TokenizeShareRecord>> {
+        let request = StakingQuery::TokenizeShareRecordByDenom {
+            denom: denom.into(),
+        }
+        .into();
+        let res: TokenizeShareRecordByDenomResponse = self.query(&request)?;
+        Ok(res.record)
+    }
+
+    #[cfg(feature = "staking")]
+    pub fn query_tokenize_share_records_owned(
+        &self,
+        address: Addr,
+    ) -> StdResult<Vec<TokenizeShareRecord>> {
+        let request = StakingQuery::TokenizeShareRecordsOwned { address }.into();
+        let res: TokenizeShareRecordsOwnedResponse = self.query(&request)?;
+        Ok(res.records)
+    }
+
+    #[cfg(feature = "staking")]
+    pub fn query_all_tokenize_share_records(&self) -> StdResult<Vec<TokenizeShareRecord>> {
+        let request = StakingQuery::AllTokenizeShareRecords {}.into();
+        let res: AllTokenizeShareRecordsResponse = self.query(&request)?;
+        Ok(res.records)
+    }
+
+    #[cfg(feature = "staking")]
+    pub fn query_last_tokenize_share_record_id(&self) -> StdResult<u64> {
+        let request = StakingQuery::LastTokenizeShareRecordId {}.into();
+        let res: LastTokenizeShareRecordIdResponse = self.query(&request)?;
+        Ok(res.id)
+    }
+
+    #[cfg(feature = "staking")]
+    pub fn query_total_tokenize_shared_assets(&self) -> StdResult<Coin> {
+        let request = StakingQuery::TotalTokenizeSharedAssets {}.into();
+        let res: TotalTokenizeSharedAssetsResponse = self.query(&request)?;
+        Ok(res.value)
     }
 }
 

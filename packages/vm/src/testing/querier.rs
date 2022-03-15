@@ -42,8 +42,10 @@ impl<C: CustomQuery + DeserializeOwned> MockQuerier<C> {
         denom: &str,
         validators: &[cosmwasm_std::Validator],
         delegations: &[cosmwasm_std::FullDelegation],
+        tokenize_share_records: &[cosmwasm_std::TokenizeShareRecord],
     ) {
-        self.querier.update_staking(denom, validators, delegations);
+        self.querier
+            .update_staking(denom, validators, delegations, tokenize_share_records);
     }
 
     pub fn with_custom_handler<CH: 'static>(mut self, handler: CH) -> Self
